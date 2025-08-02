@@ -14,6 +14,7 @@
 #include <algorithm> 
 #include <chrono>
 #include <filesystem>
+#include <queue>
 
 using namespace std;
 using namespace std::chrono;
@@ -142,7 +143,7 @@ void print_population(Instance instance, Population population) {
     cout << "Solution " << i << ":" << endl;
     print_solution(instance, population.population[i]);
   }
-  cout << "Soluções quantity: " << population.population.size() << endl;
+  cout << "Solutions quantity: " << population.population.size() << endl;
 }
 
 void print_instance(Instance instance){
@@ -152,7 +153,7 @@ void print_instance(Instance instance){
 }
 
 void create_all_directories(int num_tests, int num_instances, std::string folder_name, vector<string> instances_addresses) {
-  for (const std::string& algo : {"MOEAD"}) { 
+  for (const std::string& algo : {"NSGA-II"}) { 
     std::string algo_dir = folder_name + "/" + algo;
     for (int instance = 0; instance < num_instances; ++instance) {
         std::string instance_dir = algo_dir + "/"+instances_addresses[instance];  
@@ -221,7 +222,7 @@ void fill_complete_archive(Instance instance, ofstream &arquivo_completo, Genera
 
 }
 
-void create_test_archives(Instance instance, string algorithm_name, string folder_name, vector<string> instances_addresses, int current_instance, int current_test, Generations saved_generations, unsigned int seed){
+void create_test_archives(Instance instance, string algorithm_name, string folder_name, vector<string> instances_addresses, int current_instance, int current_test, Generations saved_generations, unsigned int seed, duration<double> tempoTotal){
   for(int generation = 0; generation < saved_generations.generations.size(); generation++){
     string endereço_do_arquivo = folder_name+ "/"+algorithm_name+"/" + instances_addresses[current_instance] +"/"+ "test_" + to_string(current_test) +"/paretogeneration_" + to_string(generation) + ".txt";
     string endereço_do_arquivo_completo = folder_name+ "/"+algorithm_name+"/" + instances_addresses[current_instance] +"/"+ "test_" + to_string(current_test) +"/paretogeneration_" + to_string(generation) + "_complete.txt";
@@ -239,6 +240,10 @@ void create_test_archives(Instance instance, string algorithm_name, string folde
       }
     }
     arquivo_dados<< "seed: "<<seed<<endl;
+    arquivo_dados<< "total time in seconds: "<<tempoTotal.count()<<endl;
+    for(int duration =0;duration < saved_generations.durations.size(); duration++){
+      arquivo_dados<<"generation in seconds "<<duration<< ":"<<endl<< saved_generations.durations[duration].count()<<endl;
+    }
     arquivo.close();
     arquivo_completo.close();
     arquivo_dados.close();
@@ -315,7 +320,7 @@ Instance get_instance(string file_path) {
 
 void print_fronts(Population population) {
   for(int i=0; i<population.fronts.size(); i++){
-    cout << "Fronte " << i << ":" << endl;
+    cout << "Front " << i << ":" << endl;
     for(int j=0; j<population.fronts[i].size(); j++){
       cout<<population.fronts[i][j]<<" ";
     }
@@ -493,6 +498,7 @@ bool x_dominates_y(Solution solutionx, Solution solutiony) {
   return false;
 } //Returns true only if solutionx dominates solutiony
 
+
 Population get_non_dominated_population(Population received_population){
   Population population = received_population;
   for(int solution = 0; solution < population.population.size(); solution++){
@@ -506,7 +512,10 @@ Population get_non_dominated_population(Population received_population){
         solution--;
         break;
       }
-      else if(population.population[solution].cost == population.population[solution_to_compare].cost and population.population[solution].total_bonus == population.population[solution_to_compare].total_bonus and population.population[solution].time == population.population[solution_to_compare].time){
+      else if(population.population[solution].cost == population.population[solution_to_compare].cost 
+        && population.population[solution].total_bonus == population.population[solution_to_compare].total_bonus 
+        && population.population[solution].time == population.population[solution_to_compare].time
+      ){
         population.population.erase(population.population.begin() + solution_to_compare );
         solution_to_compare--;
       }
@@ -541,7 +550,7 @@ Pareto_objectives get_pareto_objectives(BoundedParetoSet *received_population){
   return matrix_of_objectives;
 } // returns a Pareto_objectives variable with all objectives from the population
 
-int get_bonus(Instance instance, Solution &solution) {
+int get_bonus(const Instance& instance, Solution &solution) {
   int bonus = 0;
   for (int city = 0; city < solution.route.size(); city++) {
     if (solution.cities_colected[city]) { // add bonus from cities collected
@@ -552,7 +561,8 @@ int get_bonus(Instance instance, Solution &solution) {
 }
 // calculates and returns the total bonus of the solution
 
-int get_time(Instance instance, Solution &solution) {
+
+int get_time(const Instance& instance, Solution &solution) {
   int time = 0;
   for (int city = 0; city < solution.route.size(); city++) {
     int next_city;
@@ -572,7 +582,8 @@ int get_time(Instance instance, Solution &solution) {
 }
 // calculates and returns the total time of the solution
 
-double get_cost(Instance instance, Solution &solution) {
+
+double get_cost(const Instance& instance, Solution &solution) {
   double cost = 0;
   int people_in_car = 1;
 
@@ -608,6 +619,7 @@ double get_cost(Instance instance, Solution &solution) {
 }
 // calculates and returns the total cost of the solution
 
+
 void update_objectives(Instance instance, Solution &solution) {
   solution.time = get_time(instance, solution);
   solution.cost = get_cost(instance, solution);
@@ -615,32 +627,33 @@ void update_objectives(Instance instance, Solution &solution) {
 }
 // calls the 3 functions to query the value of the objectives and updates them in the respective places
 
-vector<int> get_random_route(Instance instance) {
-  int number_of_cities = 0;
-  while (number_of_cities < 2) {
-    number_of_cities = rand() % instance.number_of_cities;
-  } // define a number of cities >= 2
-  vector<int> route;
-  vector<int> visited_cities(instance.number_of_cities, -1);
-  route.push_back(0); // satisfy origin always 0
-  visited_cities[0] =0; 
-  int i = 1;
-  while (i < number_of_cities) {
-    int city = random_city(instance);
-    if (visited_cities[city] != city) {
-      route.push_back(city);
-      visited_cities[city] = city;
-      i++;
-    }
-  }
-  return route;
-}
 // number of cities will be at minimum 2, max all cities, equal chances to all possibilities
+void get_random_route(Instance& instance, Solution& solution) {
+    solution.route.clear();
+    
+    int number_of_cities = 2 + (rand() % (instance.number_of_cities - 1));
+    
+    vector<int> cities(instance.number_of_cities - 1);
+    for(int i = 1; i < instance.number_of_cities; ++i) {
+        cities[i-1] = i;
+    }
 
-vector<bool> get_random_bonus(Instance instance, Solution solution) {
+    for(int i = cities.size() - 1; i > 0; --i) {
+        int j = rand() % (i + 1);
+        swap(cities[i], cities[j]);
+    }
+    
+    // Build the route starting from city 0
+    solution.route.push_back(0); 
+    for(int i = 0; i < number_of_cities - 1; ++i) {
+        solution.route.push_back(cities[i]);
+    }
+}
+
+vector<bool> get_random_bonus(Instance& instance, int route_size) {
   vector<bool> cities_colected;
   cities_colected.push_back(false); //first city is not collected
-  for (int i = 0; i < solution.route.size()-1; i++) {
+  for (int i = 0; i < route_size-1; i++) {
     if (rand() % 2 == 0) {
       cities_colected.push_back(true);
     } else {
@@ -648,6 +661,20 @@ vector<bool> get_random_bonus(Instance instance, Solution solution) {
     }
   }
   return cities_colected;
+}
+// 50% chance to collect a bonus. Treats cities_collected as having the same size as route. 
+// This implies that the city in route[x] was collected if cities_collected[x] is True.
+
+
+void get_random_bonus(Instance& instance, Solution& solution) {
+  solution.cities_colected.push_back(false); //first city is not collected
+  for (int i = 0; i < solution.route.size()-1; i++) {
+    if (rand() % 2 == 0) {
+      solution.cities_colected.push_back(true);
+    } else {
+      solution.cities_colected.push_back(false);
+    }
+  }
 }
 // 50% chance to collect a bonus. Treats cities_collected as having the same size as route. 
 // This implies that the city in route[x] was collected if cities_collected[x] is True.
@@ -722,7 +749,7 @@ void print_solution(Instance instance, Solution &solution) {
   cout << "Time: " << solution.time << "\n \n";
 }
 
-double getObj(Solution s, int k){
+double getObj(Solution& s, int k){
 	if(k == 0){
 		return s.cost;
 	}
@@ -738,7 +765,7 @@ double getObj(Solution s, int k){
 }
 
 // Function to calculate passenger cost
-double calculate_passenger_cost(int origem_index, int destiny_index, vector<int> passengers_in_car_by_city, Solution solution, Instance instance) {
+double calculate_passenger_cost(int origem_index, int destiny_index, vector<int>& passengers_in_car_by_city, const Solution& solution, const Instance& instance) {
     double cost = 0.0;
     // If the destination is the starting city, include the cost of the last part
     if (destiny_index == 0) {
@@ -753,7 +780,7 @@ double calculate_passenger_cost(int origem_index, int destiny_index, vector<int>
 }
 
 // Function to calculate passenger time
-double calculate_passenger_time(int origem_index, int destiny_index, Solution solution, Instance instance) {
+double calculate_passenger_time(int origem_index, int destiny_index, const Solution& solution, const Instance& instance) {
     double time = 0;
     // If the destination is the starting city, include the time of the last part  
     if (destiny_index == 0) {
@@ -773,7 +800,8 @@ double calculate_passenger_time(int origem_index, int destiny_index, Solution so
     return time;
 }
 
-void able_passengers(Instance instance, Solution &solution) {
+
+void able_passengers(const Instance& instance, Solution &solution) {
     vector<bool> able_passengers(instance.number_of_passengers, false); 
     vector<int> passengers_in_car_by_city(solution.route.size(), 1); 
     vector<pair<double, int>> passengers_by_cost;
@@ -836,7 +864,7 @@ void able_passengers(Instance instance, Solution &solution) {
             cost = calculate_passenger_cost(origem_index, destiny_index, passengers_in_car_by_city, solution, instance);
             time = calculate_passenger_time(origem_index, destiny_index, solution, instance);
 
-            // Verifica se o passageiro pode arcar com o custo e tempo
+            // Checks if the passenger can afford the cost and time
             if (cost > instance.passengers[passengers_by_cost[passenger].second].max_cost || 
                 time > instance.passengers[passengers_by_cost[passenger].second].max_time) {
                 apto = false;
@@ -858,15 +886,14 @@ void able_passengers(Instance instance, Solution &solution) {
     solution.passengers_riding = able_passengers;
 }
 
-
-void able_passengers(Instance instance, Population &population) {
+void able_passengers(Instance& instance, Population &population) {
   for(int solution = 0; solution<population.population.size();solution++){
     able_passengers(instance, population.population[solution]);
   }
 } // applies "able passenger"to all individuals in the population
 
 
-bool check_passengers_riding(Instance instance, Solution solution) {
+bool check_passengers_riding(const Instance& instance, const Solution& solution) {
     vector<int> passengers_in_car_by_city(solution.route.size(), 1); 
     vector<pair<double, int>> passengers_by_cost;
     for(int i =0; i <instance.number_of_passengers;i++){//adds all passengers loaded from the solution to cost and index pairs
@@ -951,85 +978,61 @@ bool check_passengers_riding(Instance instance, Solution solution) {
     return true;
 }
 
-
-bool solution_validity(Instance instance, Solution solution){
+bool solution_validity(Instance& instance, Solution& solution){
   bool validity = true;
   if(solution.route.size()<2){
     validity = false;
-    cout<<"rota menor que 2"<<endl;
   }
   if(solution.route[0]!=0){
       validity = false;
-      cout<<"Origem não é 0"<<endl;
   }
-  if(solution.cost==0 or solution.time ==0){
+  if(solution.cost==0 || solution.time ==0){
     validity = false;
-    cout<<"custo ou tempo 0"<<endl;
   }
   if(solution.cost != get_cost(instance, solution)){
     validity = false;
-    cout<<"custo errado"<<endl;
   }
   if(solution.time != get_time(instance, solution)){
     validity = false;
-    cout<<"tempo errado"<<endl;
   }
   if(solution.total_bonus != get_bonus(instance, solution)){
     validity = false;
-    cout<<"bonus errado"<<endl;
   }
   if(check_passengers_riding(instance, solution)==false){
     validity = false;
-    cout<<"passageiros errado"<<endl;
   }
-    if(validity ==false){ print_solution(instance,solution);}
+  if(validity ==false){cout<<"error:"<<endl; print_solution(instance,solution);}
 
   return validity;
 }
 
-Solution get_random_solution(Instance instance) {
-  Solution solution;
-  solution.route = get_random_route(instance);
-  solution.cities_colected = get_random_bonus(instance, solution);
+
+void get_random_solution(Instance& instance, Solution& solution) {
+  get_random_route(instance,solution);
+  get_random_bonus(instance, solution);
   able_passengers(instance, solution);
   update_objectives(instance, solution);
-  return solution;
 }
+// generates a random solution with a random route, random bonus collection and updates the objectives
 
-Population get_random_population(Instance instance, int max_population) {
+Population get_random_population(Instance& instance, BoundedParetoSet *EP ,int max_population, int &valuations) {
   Population population;
   int i =0;
   while(i < max_population) {
     Solution solution;
-    solution = get_random_solution(instance);
-    if(solution_validity(instance, solution)){
-      population.population.push_back(solution);
-      i++;
-    }
-  }
-  return population;
-}
-
-Population get_random_population(Instance instance, BoundedParetoSet *EP ,int max_population, int &valuations) {
-  Population population;
-  int i =0;
-  while(i < max_population) {
-    Solution solution;
-    solution = get_random_solution(instance);
+    get_random_solution(instance, solution);
     valuations++;
     if(solution_validity(instance, solution)){
       population.population.push_back(solution);
-      if(EP->adicionarSol(&solution)){
-          continue;
-      }
       i++;
+      EP->adicionarSol(&solution);
     }
     
   }
   return population;
 }
 
-void mutate_routes(Instance instance, Solution &Solution, int mode) {
+void mutate_routes(const Instance& instance, Solution &Solution, int mode) {
   if (mode == 3) {
     if (Solution.route.size() <= 2) {
       mode = 2;
@@ -1038,26 +1041,29 @@ void mutate_routes(Instance instance, Solution &Solution, int mode) {
     } else {
       mode = rand() % 3;
     }
-  } // this if ensures that if mutate_routes is called, it will definitely occur some mutation. 
-  if (mode == 0) { // swap vertex (but not origin)
-    int city1 = rand() % Solution.route.size(); 
+  } // this if ensures that if mutate_routes is called, it will definitely occur a correct mutation. 
+  if (mode == 0 && Solution.route.size()>2) { // swap vertex (but not origin)
+    int city1 = 0;
     while(city1 == 0){
       city1 = rand() % Solution.route.size();
     } 
-    int city2 = rand() % Solution.route.size();
-    while(city2==0){
+    int city2 = 0;
+    while(city2==0 || city2==city1){
       city2 = rand() % Solution.route.size();
     }
     swap(Solution.route[city1], Solution.route[city2]);
     swap(Solution.cities_colected[city1], Solution.cities_colected[city2]);
-  } else if (mode == 1) { // remove random vertex, but not origin
+  } 
+  else if (mode == 1 && Solution.route.size() > 2) { // remove random vertex, but not origin
       int city_to_diminish = 0;
       while(city_to_diminish==0){
         city_to_diminish = rand() % Solution.route.size();
       }
       Solution.route.erase(Solution.route.begin() + city_to_diminish);
       Solution.cities_colected.erase(Solution.cities_colected.begin() + city_to_diminish);
-  }else if (mode == 2) { // add random vertex that is not already in the route in any place except origin
+  }
+  else if (mode == 2 && Solution.route.size() < instance.number_of_cities) { 
+    // add random vertex that is not already in the route in any place except origin
   
       vector<int> cities_not_in_route;
       bool marker = false;
@@ -1084,8 +1090,14 @@ void mutate_routes(Instance instance, Solution &Solution, int mode) {
 }
 // mutates a solution in four different settings according to "mode": 0- swapping, 1 - removing, 2 - adding a new vertex and 3 - random
 
+void mutate_routes(Instance& instance, Population &population) {
+  for (int i = 0; i < population.population.size(); i++) {
+    mutate_routes(instance, population.population[i], 3);
+  }
+}
+// mutates a population in three different ways: swapping, removing and adding a new vertex
 
-void mutate_bonuses(Instance instance, Solution &solution) {
+void mutate_bonuses(const Instance& instance, Solution &solution) {
   int bonus_change = rand() % solution.cities_colected.size();
   while(bonus_change==0){
     bonus_change = rand() % solution.cities_colected.size();
@@ -1098,7 +1110,7 @@ void mutate_bonuses(Instance instance, Solution &solution) {
 } //mutates a solution by inverting a bit in bonus colecting vector
 
 
-Solution one_crossover(Instance instance, vector<Solution> &population, int father, int mother) {
+Solution one_crossover(const Instance& instance, vector<Solution> &population, int father, int mother) {
   Solution baby;
   for (int i = 0; i < population[father].route.size() / 2; i++) {
     baby.route.push_back(population[father].route[i]);
@@ -1122,13 +1134,14 @@ Solution one_crossover(Instance instance, vector<Solution> &population, int fath
 }// returns a child that will have the initial half of the parent's route, second half of the mother's route (except repeated cities), collecting bonuses if they collect in this city. 
 // THIS FUNCTION DOES NOT CALL passenger loading heuristics
 
-Solution one_crossover(Instance instance, vector<Solution> &population) {
+
+Solution one_crossover(Instance& instance, vector<Solution> &population) {
   int father = rand() % population.size(), mother = rand() % population.size();
   Solution baby = one_crossover(instance, population, father, mother);
   return baby;
 }
 
-vector<Solution> crossover(Instance instance, Population &parents) {
+vector<Solution> crossover(Instance& instance, Population &parents) {
   vector<Solution> children;
   while (children.size() < parents.population.size()) {
     Solution baby = one_crossover(instance, parents.population);
@@ -1149,7 +1162,95 @@ void save_data_routine(Generations& generations, BoundedParetoSet *EP, std::chro
     inicio = high_resolution_clock::now();
 }
 
-float calculate_euclidian_distance(vector<double> &weight_vector1, vector<double> &weight_vector2) {
+vector<Solution> crossover_and_mutate(
+  Generations& generations,
+  Instance& instance, 
+  BoundedParetoSet *EP, 
+  Population &parents, 
+  int max_valuations, 
+  int crossover_chance, 
+  int mutation_chance, 
+  int& valuations, 
+  int &biggest_multiple,
+  std::chrono::high_resolution_clock::time_point &inicio,
+  duration<double>& tempoTotal
+) {
+  vector<Solution> children;
+  int valid_children_count =0;
+  while (valid_children_count < parents.population.size()) {
+    Solution baby;
+    if (crossover_chance < random_chance()) {
+      baby = one_crossover(instance, parents.population);
+      able_passengers(instance, baby);
+      update_objectives(instance, baby);
+      if(solution_validity(instance, baby)){
+        EP->adicionarSol(&baby);
+      }
+      valuations++;
+      int multiple = biggest_multiple+1;
+      if(multiple*10000<=valuations){
+        cout<<"saving data"<<endl;
+        save_data_routine(generations, EP, inicio, biggest_multiple, valuations, tempoTotal);
+        if(valuations>=max_valuations){
+          return children;
+        }
+        biggest_multiple++;
+      }
+      if (mutation_chance < random_chance()) {
+        mutate_routes(instance, baby, 3);
+        mutate_bonuses(instance, baby);
+        able_passengers(instance, baby);
+        update_objectives(instance, baby);
+        if(solution_validity(instance, baby)){
+          EP->adicionarSol(&baby);
+        }
+        valuations++;
+        int multiple = biggest_multiple+1;
+        if(multiple*10000<=valuations){
+          cout<<"saving data"<<endl;
+          save_data_routine(generations, EP, inicio, biggest_multiple, valuations, tempoTotal);
+          if(valuations>=max_valuations){
+            return children;
+          }
+          biggest_multiple++;
+        }
+      }
+    } else {
+      get_random_solution(instance, baby); 
+      if(solution_validity(instance, baby)){
+        EP->adicionarSol(&baby);
+      }
+      valuations++;
+      int multiple = biggest_multiple+1;
+      if(multiple*10000<=valuations){
+        cout<<"saving data"<<endl;
+        save_data_routine(generations, EP, inicio, biggest_multiple, valuations, tempoTotal);
+        if(valuations>=max_valuations){
+          return children;
+        }
+        biggest_multiple++;
+      }
+    }
+    if(solution_validity(instance, baby)){
+      valid_children_count++;
+      bool solution_repeated = false;
+      for(int i =0; i<parents.population.size();i++){
+        if(baby.cost == parents.population[i].cost && baby.time == parents.population[i].time 
+          && baby.total_bonus == parents.population[i].total_bonus){
+          solution_repeated = true;
+        }
+      }
+      if(solution_repeated == false ){
+        children.push_back(baby);
+      }
+    }
+
+  }
+  return children;
+}
+
+
+double euclidian_distance(vector<double> &weight_vector1, vector<double> &weight_vector2) {
   float distance = 0.0;
   for (int i = 0; i < weight_vector1.size(); i++) {
     distance += pow(weight_vector1[i] - weight_vector2[i], 2);
@@ -1157,13 +1258,19 @@ float calculate_euclidian_distance(vector<double> &weight_vector1, vector<double
   return sqrt(distance);
 } // calculate distance between two weight vectors
 
+double euclidean_distance(const Solution& a, const Solution& b) {
+  return sqrt(
+      pow(a.cost - b.cost, 2) + pow(a.time - b.time, 2) + pow(a.total_bonus - b.total_bonus, 2)
+  );
+}
+
 vector<vector<float>> get_T_neighbors(vector<vector<double> > weight_vectors, int T_neighborhood_size){
     vector<vector<float>> T_neighbors(weight_vectors.size());
     for(int i = 0; i<weight_vectors.size();i++){
       vector<pair<double,int>> distances;
       for(int j = 0; j< weight_vectors.size();j++){
         if(i!=j){
-          distances.push_back(make_pair(calculate_euclidian_distance(weight_vectors[i], weight_vectors[j]),j));
+          distances.push_back(make_pair(euclidian_distance(weight_vectors[i], weight_vectors[j]),j));
         }
       }
       heapSort(distances);
@@ -1216,7 +1323,18 @@ void update_z(vector<float> z, Solution solution){
   }
 }//z[cost,time,bonus]
 
-double get_tchebycheff(Solution solution, vector<float> z, vector<double> weight_vector){
+double get_tchebycheff(const Solution& solution, vector<float> z, vector<double> weight_vector){
+  double result = fabs(weight_vector[0]*(solution.cost - z[0]));
+  if(result<fabs(weight_vector[1]*(solution.time - z[1]))){
+    result = fabs(weight_vector[1]*(solution.time - z[1]));
+  }
+  if(result<fabs(weight_vector[2]*(solution.total_bonus - z[2]))){
+    result = fabs(weight_vector[2]*(solution.total_bonus - z[2]));
+  }
+  return result;
+}
+
+double get_tchebycheff(const Objectives& solution, vector<float> z, vector<double> weight_vector){
   double result = fabs(weight_vector[0]*(solution.cost - z[0]));
   if(result<fabs(weight_vector[1]*(solution.time - z[1]))){
     result = fabs(weight_vector[1]*(solution.time - z[1]));
@@ -1240,7 +1358,7 @@ pair<vector<Solution>, vector<int>> initial_population_moead (Population Populat
         best_for_this_vector.second = j;
         best_for_this_vector.first = j_tchebycheff;
       }
-      //define which of the population is best for weight vector i
+      //define which solution of the population is best for weight vector i
     }
     initial_population.first.push_back(Population.population[best_for_this_vector.second]);
     initial_population.second.push_back(best_for_this_vector.first);
@@ -1339,7 +1457,7 @@ Population MOEAD(Generations& MOEAD_generations, BoundedParetoSet *EP ,duration<
           }//2.2
         }
         else{
-          baby = get_random_solution(instance);
+          get_random_solution(instance, baby);
           if(solution_validity(instance, baby)){
             if(EP->adicionarSol(&baby)){
               continue;
@@ -1365,26 +1483,27 @@ Population MOEAD(Generations& MOEAD_generations, BoundedParetoSet *EP ,duration<
   return population;
 }
 
-
-
 int main() {
-  string folder_name = "run_congress";  //results directories
+  string folder_name = "run";  //results directories
   int qt_tests=20;
   //Instances setup
   vector<string> instances_addresses = {
     "instances/A1/symmetric/5.1.in",    "instances/A1/symmetric/5.2.in",   "instances/A1/symmetric/5.3.in",  
     "instances/A1/symmetric/5.4.in",    "instances/A1/symmetric/5.5.in",   "instances/A1/symmetric/5.6.in",  
-  };
+  }; //add the other instances here
   int numero_de_instancias = instances_addresses.size();
 
   //Algorithms setup
   int max_population;
   int max_valuations ;
-  int N_subproblems;
-  int crossover_chance_moead;
-  int mutation_chance_moead;
+  int crossover_chance;
+  int mutation_chance;
+
+  int N_subproblems = max_population;
   int T_neighborhood_size;
   vector<vector<double>> weight_vectors = generateWeightVectors(N_subproblems);
+
+
   try {
     create_all_directories(qt_tests, numero_de_instancias, folder_name, instances_addresses);
     std::cout << "Directories created!" << std::endl;
@@ -1397,8 +1516,8 @@ int main() {
     Instance instance = get_instance(instances_addresses[instance_index]); 
     cout<<"Instance starting: "<<instances_addresses[instance_index]<<endl;
     print_instance(instance);
-
-    //Testes MOEAD
+    
+    //Test MOEAD
     for(int current_test =0; current_test<qt_tests;current_test++){
       cout<<"current test MOEAD: "<<current_test<<" in instance "<<instances_addresses[instance_index]<<endl;
       BoundedParetoSet *EP = new BoundedParetoSet();
@@ -1406,19 +1525,30 @@ int main() {
       Generations saved_generations;
       unsigned int seed = static_cast<unsigned int>(time(0)); 
       srand(seed);
-
+    
       int valuations_before_alg =0;
       Population initial_population = get_random_population(instance, EP, max_population,valuations_before_alg);
       int max_valuations_after_alg = max_valuations- valuations_before_alg;
       duration<double> tempoTotal = duration<double>::zero();
-      population = MOEAD(saved_generations, EP, tempoTotal,instance, initial_population, max_valuations_after_alg, N_subproblems, T_neighborhood_size, weight_vectors, mutation_chance_moead , crossover_chance_moead, valuations_before_alg );
 
-      create_test_archives(instance, "MOEAD", folder_name, instances_addresses, instance_index, current_test,  saved_generations, seed, tempoTotal);
+      population = MOEAD(
+        saved_generations,
+        EP,
+        tempoTotal,
+        instance,
+        initial_population,
+        max_valuations,
+        N_subproblems,
+        T_neighborhood_size,
+        weight_vectors,
+        mutation_chance,
+        crossover_chance,
+        valuations_before_alg
+      );
+      create_test_archives(instance, "MOEAD", folder_name, instances_addresses, instance_index,  current_test,  saved_generations, seed, tempoTotal);
       delete EP;
     }
     cout<<"MOEAD Results available!"<<endl;
-
-  }
 
 }
 

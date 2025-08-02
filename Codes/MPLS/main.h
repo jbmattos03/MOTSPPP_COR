@@ -1,24 +1,11 @@
-#pragma once
+#ifndef MAIN_FUNCTIONS_H
+#define MAIN_FUNCTIONS_H
 
 #include <vector> 
 #include <chrono>
-#include <limits>
-#include <algorithm>
 using namespace std;
 using namespace std::chrono;
 
-
-struct NormalizedObjectives {
-  double cost;
-  double time;
-  double bonus;
-};
-
-struct ObjectiveBounds {
-  double min_cost, max_cost;
-  double min_time, max_time;
-  double min_bonus, max_bonus;
-};
 
 struct Passenger {
   int max_cost;
@@ -45,7 +32,6 @@ struct Solution {
   double cost;
   int time;
   int total_bonus;
-  double fitness;   
 };
 
 
@@ -57,6 +43,7 @@ struct Population {
   vector<double> crowding_distance;
 
   //SPEA2 information
+  vector<int> strenghts;
   vector<int> raw_fitness;
   vector<double> fitness;
   vector<vector<double> > distances_to_other_solutions;
@@ -87,13 +74,7 @@ struct Tests{
 
 
 double getObj(Solution s, int k);
-bool solution_validity(Instance instance, Solution solution);
 void print_solution(Solution solution);
 bool x_dominates_y(Solution solutionx, Solution solutiony);
-double euclidean_distance(const Solution& a, const Solution& b);
-double get_tchebycheff(Solution solution, vector<float> z, vector<double> weight_vector);
-double get_tchebycheff(Objectives solution, vector<float> z, vector<double> weight_vector);
-void mutate_routes(Instance instance, Solution &Solution, int mode);
-void invert_bonuses(Instance instance, Solution &solution);
-void able_passengers(Instance instance, Solution &solution);
-//void save_data_routine(Generations& generations, BoundedParetoSet *EP, int &biggest_multiple, int valuations);
+
+#endif

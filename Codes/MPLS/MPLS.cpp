@@ -3,6 +3,7 @@
 
 #include "main.h"
 #include "BoundedParetoSet.cpp"
+#include "ND-Tree.h"
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -546,6 +547,23 @@ Pareto_objectives get_pareto_objectives(BoundedParetoSet *received_population){
   for(int solution =0;solution<pop_size;solution++){
     matrix_of_objectives.pareto_set.push_back(received_population->get_objectives(solution));
     matrix_of_objectives.solutions.push_back(received_population->get_solution(solution));
+  }
+  return matrix_of_objectives;
+} // returns a Pareto_objectives variable with all objectives from the population
+
+//version that will receive NDTree
+Pareto_objectives get_pareto_objectives(NDTree& archive){
+  Pareto_objectives matrix_of_objectives;
+  vector<Solution> allSolutions;
+  archive.root->GetAllSolutions(allSolutions);
+  int pop_size = archive.current_size;
+  for(auto& solution : allSolutions){
+    Objectives objectives;
+    objectives.cost = solution.cost;
+    objectives.time = solution.time;
+    objectives.total_bonus = solution.total_bonus;
+    matrix_of_objectives.pareto_set.push_back(objectives);
+    matrix_of_objectives.solutions.push_back(solution);
   }
   return matrix_of_objectives;
 } // returns a Pareto_objectives variable with all objectives from the population
@@ -1162,6 +1180,16 @@ void save_data_routine(Generations& generations, BoundedParetoSet *EP, std::chro
     inicio = high_resolution_clock::now();
 }
 
+void save_data_routine(Generations& generations, NDTree& archive, std::chrono::high_resolution_clock::time_point &inicio, int &biggest_multiple, int valuations, duration<double>& tempoTotal){
+  auto fim = high_resolution_clock::now();
+  duration<double> tempotrecho = duration_cast<duration<double>>(fim - inicio);//update stretch time
+  generations.durations.push_back(tempotrecho);
+  tempoTotal += duration_cast<duration<double>>(fim - inicio); //adding total time
+  Pareto_objectives sets_of_objectives = get_pareto_objectives(archive);
+  generations.generations.push_back(sets_of_objectives);
+  inicio = high_resolution_clock::now();
+}
+
 vector<Solution> crossover_and_mutate(
   Generations& generations,
   Instance& instance, 
@@ -1249,188 +1277,181 @@ vector<Solution> crossover_and_mutate(
   return children;
 }
 
+vector<double> generate_normalized_weights(int J) {
+    vector<double> lambda(J);
+    double sum = 0.0;
 
-void update_fronts(Population &population) {
-  int n = population.population.size();
-  vector<vector<int>> solutions_dominated_by(n);
-  vector<int> dominates(n,0);
-  vector<vector<int>> temp_fronts(n);
-  int current_front = 0;
-
-  for (int i = 0; i < n; ++i) {
-    for (int j = i + 1; j < n; ++j) {
-      if (x_dominates_y(population.population[j], population.population[i])) {
-        dominates[i]++;
-        solutions_dominated_by[j].push_back(i);
-      } else if (x_dominates_y(population.population[i], population.population[j])) {
-        dominates[j]++;
-        solutions_dominated_by[i].push_back(j);
-      }
+    for (int j = 0; j < J - 1; ++j) {
+        double r = static_cast<double>(rand()) / RAND_MAX;
+        double product = pow(r, 1.0 / (J - j - 1));
+        lambda[j] = (1.0 - sum) * (1.0 - product);
+        sum += lambda[j];
     }
-  }
 
-   // Above defines who dominates who and how many dominate a given solution
-
-  for (int i = 0; i < n; i++) {
-    if (dominates[i] == 0) {
-      temp_fronts[0].push_back(i);
-      dominates[i]=-1;
-    }
-  } //Defines first front only with non-dominated
-
-  while (!temp_fronts[current_front].empty()) {
-    vector<int> next_front;
-    for (int current_solution = 0; current_solution < temp_fronts[current_front].size();current_solution++) {//for each solution x of the front
-      for (int j=0; j< solutions_dominated_by[temp_fronts[current_front][current_solution]].size();j++){ //for each one dominated by solution x
-        //the current solution number of the current front: temp_fronts[current_front][current_solution]
-        //solutions dominated by the current solution: solutions_dominated_by[temp_fronts[current_front][current_solution]] 
-        dominates[solutions_dominated_by[temp_fronts[current_front][current_solution]][j]]--;
-        if (dominates[solutions_dominated_by[temp_fronts[current_front][current_solution]][j]] == 0) {
-          next_front.push_back(solutions_dominated_by[temp_fronts[current_front][current_solution]][j]);
-        }
-      }
-    }
-    current_front++;
-    temp_fronts[current_front] = next_front;
-  }
-  population.fronts = temp_fronts;
-  int i = 0;
-  while (i < population.fronts.size()) {
-    if (population.fronts[i].empty()) {
-      population.fronts.erase(population.fronts.begin() + i);
-    } 
-    else{
-    i++;
-    }
-  }//Cleaning the fronts that were left empty
-}
-// clear the current fronts and update them
-
-void crowding_distance_assignment(Population &population) {
-
-  int last = population.population.size();
-  vector<pair<double, int>> objective_and_index(population.population.size());
-  vector<double> crowding_distance(population.population.size());
-
-  for (int objetivo = 1; objetivo <= 3; objetivo++) {
-      if (objetivo == 1) { // cost
-      for (int i = 0; i < last; i++) {
-        objective_and_index[i].first = population.population[i].cost;
-        objective_and_index[i].second = i;
-      }//places the objectives and indices in the vector of objectives and indices
-    } 
-    else if (objetivo == 2) { // time
-      for (int i = 0; i < last; i++) {
-        objective_and_index[i].first = population.population[objective_and_index[i].second].time;
-        objective_and_index[i].second = i;
-      }
-    }        
-    else if (objetivo == 3) { // total bonus
-      for (int i = 0; i < last; i++) {
-        objective_and_index[i].first = population.population[objective_and_index[i].second].total_bonus;
-        objective_and_index[i].second = i;
-      }
-    }
-    heapSort(objective_and_index); //sort in ascending order
-    crowding_distance[objective_and_index[0].second] = 2147483647; // extremes receive biggest int possible
-    crowding_distance[objective_and_index[last - 1].second] = 2147483647;        
-    for (int i = 1; i < last - 1; i++) { // assigning crowding distance
-      if(crowding_distance[objective_and_index[i].second]!=2147483647){
-        crowding_distance[objective_and_index[i].second] += (objective_and_index[i + 1].first - objective_and_index[i - 1].first) /  (objective_and_index[last - 1].first - objective_and_index[0].first);
-      }
-    }
-  }
-  population.crowding_distance = crowding_distance;
-
+    lambda[J - 1] = 1.0 - sum;
+    return lambda;
 }
 
-int crowded_comparison_operator(Population &population, int solution1, int solution2) {
-  int front_solution1, front_solution2;
-  for (int front = 0; front < population.fronts.size(); front++) {
-    for (int j = 0; j < population.fronts[front].size(); j++) {
-      if (population.fronts[front][j] == solution1) {
-        front_solution1 = front;
-      }
-      if (population.fronts[front][j] == solution2) {
-        front_solution2 = front;
-      }
-    }
+double get_tchebycheff(const Solution& solution, vector<float> z, vector<double> weight_vector){
+  double result = fabs(weight_vector[0]*(solution.cost - z[0]));
+  if(result<fabs(weight_vector[1]*(solution.time - z[1]))){
+    result = fabs(weight_vector[1]*(solution.time - z[1]));
   }
-  if (front_solution1 < front_solution2) {
-    return solution1;
-  } else if (front_solution1 > front_solution2) {
-    return solution2;
+  if(result<fabs(weight_vector[2]*(solution.total_bonus - z[2]))){
+    result = fabs(weight_vector[2]*(solution.total_bonus - z[2]));
+  }
+  return result;
+}
+
+double get_tchebycheff(const Objectives& solution, vector<float> z, vector<double> weight_vector){
+  double result = fabs(weight_vector[0]*(solution.cost - z[0]));
+  if(result<fabs(weight_vector[1]*(solution.time - z[1]))){
+    result = fabs(weight_vector[1]*(solution.time - z[1]));
+  }
+  if(result<fabs(weight_vector[2]*(solution.total_bonus - z[2]))){
+    result = fabs(weight_vector[2]*(solution.total_bonus - z[2]));
+  }
+  return result;
+}
+
+void MinimizeChebycheffScalarizingFunction(
+  NDNode* n,
+  const vector<double>& weight_vector,
+  const vector<float>& z,
+  double& s_best,
+  Solution& x_best 
+){
+  if (n->is_leaf) {
+      for (const auto& sol : n->solutions) {
+          double s_value = get_tchebycheff(sol, z, weight_vector);
+          if (s_value < s_best) {
+              s_best = s_value;
+              x_best = sol;
+          }
+      }
   } else {
-    if (population.crowding_distance[solution1] > population.crowding_distance[solution2]) {
-      return solution1;
-    } else {
-      return solution2;
-    }
+      vector<pair<double, NDNode*>> children_with_s;
+      for (auto* child : n->children) {
+          double s_child = get_tchebycheff(child->nadir_point, z, weight_vector);
+          children_with_s.push_back({s_child, child});
+      }
+
+      // Sort children by s value (ascending)
+      //sort(children_with_s.begin(), children_with_s.end()); //see with teacher if this must get out
+
+      for (const auto& [s_child, child] : children_with_s) {
+          if (s_child < s_best) {
+              MinimizeChebycheffScalarizingFunction(child, weight_vector, z, s_best, x_best);
+          }
+      }
   }
 }
 
-void kill_overpopulation_NSGA2(Population &population, int pop_max) { 
-  int current_front = 0;
-  vector<int> kill_list;
-  vector<pair<double, int>> sorted_crowding_distance;
-  while (current_front < population.fronts.size() and pop_max >= 0) {
-    pop_max -= population.fronts[current_front].size();
-    current_front++;
-  } // after this line the current_front is the front where the killing begins
-  current_front--; // return to the correct front
-  for (int index : population.fronts[current_front]) {
-    sorted_crowding_distance.push_back( make_pair(population.crowding_distance[index], index));
-  } // after this line sorted_crowding_distance is a list with the crowding distances of each of the individuals on the current front and their respective indices on the front
-  heapSort(sorted_crowding_distance);//heapsort in ascending order
-
-  for (int i = 0; i < (pop_max * -1) ; i++) { 
-    kill_list.push_back(sorted_crowding_distance[i].second);
-  } // after this line the kill_list has the solutions that must die on the first front
-  current_front++;
-  while (current_front < population.fronts.size()) {
-    for (int i = 0; i < (population.fronts[current_front].size()); i++) {
-      kill_list.push_back(population.fronts[current_front][i]);
+vector<Solution> MPLS(
+  BoundedParetoSet *EP,
+  Generations& MPLS_generations,
+  duration<double>& tempoTotal,
+  Population& population,
+  Instance& instance,
+  int max_population,
+  int max_valuations,
+  int valuations_before_alg,
+  int M_neighbors,
+  int max_c,
+  int max_s
+) {
+    int valuations = valuations_before_alg;
+    int biggest_multiple = 0;
+    int multiple = biggest_multiple+1;
+    Pareto_objectives sets_of_objectives = get_pareto_objectives(EP);
+    MPLS_generations.generations.push_back(sets_of_objectives);
+    auto inicio = high_resolution_clock::now();
+    
+    NDTree* archive = new NDTree(max_c, max_s, 300);
+    for(auto solution : population.population){
+      archive->update(solution);
     }
-    current_front++;
-  } // after this line you have already added the individuals from the remaining fronts to the kill_list
-  heapSort(kill_list); // heapsort sort ascending
-  for (int i = 0; i < kill_list.size(); i++){
-    population.population.erase(population.population.begin() + kill_list[i]);
-  }
-}
+    while (valuations < max_valuations) {
+        float max_cost = archive->root->nadir_point.cost;
+        float max_time = archive->root->nadir_point.time;
+        float max_bonus = archive->root->ideal_point.total_bonus;
+        float min_cost = archive->root->ideal_point.cost;
+        float min_time = archive->root->ideal_point.time;
+        float min_bonus = archive->root->nadir_point.total_bonus;
 
-Population NSGA2(
-  Generations& NSGA2_generations, 
-  BoundedParetoSet *EP, 
-  duration<double>& tempoTotal, 
-  Instance instance, 
-  Population &population, 
-  int max_population, 
-  int max_valuations, 
-  int crossover_chance, 
-  int mutation_chance, 
-  int valuations_before_alg 
-) { 
-  int valuations = valuations_before_alg ;
-  int biggest_multiple = 0;
-  Pareto_objectives sets_of_objectives = get_pareto_objectives(EP);
-  NSGA2_generations.generations.push_back(sets_of_objectives);
-  auto inicio = high_resolution_clock::now();
+        vector<float> y0 = {
+            min_cost - 0.1f * (max_cost - min_cost),
+            min_time - 0.1f * (max_time - min_time),
+            max_bonus + 0.1f * (max_bonus - min_bonus)
+        };
 
-  while (valuations < max_valuations) {
+        vector<double> weight_vector = generate_normalized_weights(3);
 
-    vector<Solution> children = crossover_and_mutate(NSGA2_generations, instance, EP, population, max_valuations, crossover_chance, mutation_chance, valuations, biggest_multiple, inicio, tempoTotal);
+        double s_best = numeric_limits<double>::infinity();
+        Solution x_best;
+        MinimizeChebycheffScalarizingFunction(archive->root, weight_vector, y0, s_best, x_best);
+        //std::cout<<"aqui:"<<std::endl;
+        //print_solution(x_best);
+        for (int k = 0; k < 4; ++k) {
+          bool quebrar = false;
+          int M = M_neighbors;
+          while(M>0){
+            Solution neighbor = x_best;
+            switch (k % 4) {
+                case 0:
+                    mutate_routes(instance, neighbor, 0);
+                    able_passengers(instance, neighbor);
+                    update_objectives(instance, neighbor);
+                    break;
+                case 1:
+                    mutate_routes(instance, neighbor, 1);
+                    able_passengers(instance, neighbor);
+                    update_objectives(instance, neighbor);
+                    break;
+                case 2:
+                    mutate_routes(instance, neighbor, 2);
+                    able_passengers(instance, neighbor);
+                    update_objectives(instance, neighbor);
+                    break;
+                case 3:
+                    mutate_bonuses(instance, neighbor);
+                    able_passengers(instance, neighbor);
+                    update_objectives(instance, neighbor);
+                    break;
+            }
+            bool valid = solution_validity(instance, neighbor);
+            bool x_different_neighbor = 
+                (x_best.cost != neighbor.cost) ||
+                (x_best.time != neighbor.time) ||
+                (x_best.total_bonus != neighbor.total_bonus);
 
-    if(valuations>=max_valuations){
-      break;
+            valuations++;
+            int multiple = biggest_multiple+1;
+            if(multiple*10000<=valuations){
+              //cout<<"aqui no:"<< valuations <<endl;
+                save_data_routine(MPLS_generations, *archive, inicio, biggest_multiple, valuations, tempoTotal);
+                if(valuations>=max_valuations){
+                  quebrar = true;
+                  break;
+                }
+                biggest_multiple++;
+            }
+            if (!x_dominates_y(x_best, neighbor) && x_different_neighbor && valid) {
+              archive->update(neighbor);
+              quebrar = true;
+              break;
+            }
+            M--;
+          }
+          if(quebrar){
+            break;
+          }
+      }
     }
-    population.population.insert(population.population.end(), children.begin(), children.end());
-    update_fronts(population);
-    crowding_distance_assignment(population);
-    kill_overpopulation_NSGA2(population, max_population);
-  }
-  population = get_non_dominated_population(population);
-  return population;
+    vector<Solution> final;
+    archive->root->GetAllSolutions(final);
+    delete archive;
+    return final;
 }
 
 int main() {
@@ -1448,6 +1469,9 @@ int main() {
   int max_valuations ;
   int crossover_chance;
   int mutation_chance;
+  int M_neighbors;
+  int max_c;
+  int max_s;
 
   try {
     create_all_directories(qt_tests, numero_de_instancias, folder_name, instances_addresses);
@@ -1462,9 +1486,9 @@ int main() {
     cout<<"Instance starting: "<<instances_addresses[instance_index]<<endl;
     print_instance(instance);
     
-    //Test NSGA2
+    //Test MPLS
     for(int current_test =0; current_test<qt_tests;current_test++){
-      cout<<"current test SPEA2: "<<current_test<<" in instance "<<instances_addresses[instance_index]<<endl;
+      cout<<"current test MPLS: "<<current_test<<" in instance "<<instances_addresses[instance_index]<<endl;
       BoundedParetoSet *EP = new BoundedParetoSet();
       Population population;
       Generations saved_generations;
@@ -1475,11 +1499,12 @@ int main() {
       Population initial_population = get_random_population(instance, EP, max_population,valuations_before_alg);
       int max_valuations_after_alg = max_valuations- valuations_before_alg;
       duration<double> tempoTotal = duration<double>::zero();
-      population = NSGA2(saved_generations, EP, tempoTotal, instance, initial_population, max_population, max_valuations_after_alg, mutation_chance, crossover_chance, valuations_before_alg);
-      create_test_archives(instance, "SPEA2", folder_name, instances_addresses, instance_index,  current_test,  saved_generations, seed, tempoTotal);
+
+      population.population = MPLS(EP, saved_generations, tempoTotal, initial_population, instance, max_population, max_valuations_after_alg, valuations_before_alg, M_neighbors, max_c, max_s);
+      create_test_archives(instance, "MPLS", folder_name, instances_addresses, instance_index,  current_test,  saved_generations, seed, tempoTotal);
       delete EP;
     }
-    cout<<"SPEA2 Results available!"<<endl;
+    cout<<"MPLS Results available!"<<endl; 
 
 }
 

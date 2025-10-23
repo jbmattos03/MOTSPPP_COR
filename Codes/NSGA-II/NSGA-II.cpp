@@ -679,6 +679,7 @@ void get_random_bonus(Instance& instance, Solution& solution) {
 // 50% chance to collect a bonus. Treats cities_collected as having the same size as route. 
 // This implies that the city in route[x] was collected if cities_collected[x] is True.
 
+/*
 void print_solution(Solution solution) {
   cout << "Route: ";
   for(int i = 0; i < solution.route.size(); i++){
@@ -748,6 +749,7 @@ void print_solution(Instance instance, Solution &solution) {
   cout << "Bonus: " << solution.total_bonus << endl;
   cout << "Time: " << solution.time << "\n \n";
 }
+*/
 
 double getObj(Solution& s, int k){
 	if(k == 0){
@@ -1032,6 +1034,8 @@ Population get_random_population(Instance& instance, BoundedParetoSet *EP ,int m
   return population;
 }
 
+// ===== OPERADORES GENÉTICOS =====
+
 void mutate_routes(const Instance& instance, Solution &Solution, int mode) {
   if (mode == 3) {
     if (Solution.route.size() <= 2) {
@@ -1134,23 +1138,167 @@ Solution one_crossover(const Instance& instance, vector<Solution> &population, i
 }// returns a child that will have the initial half of the parent's route, second half of the mother's route (except repeated cities), collecting bonuses if they collect in this city. 
 // THIS FUNCTION DOES NOT CALL passenger loading heuristics
 
-
 Solution one_crossover(Instance& instance, vector<Solution> &population) {
   int father = rand() % population.size(), mother = rand() % population.size();
   Solution baby = one_crossover(instance, population, father, mother);
   return baby;
 }
 
+Solution two_fold_crossover(const Instance& instance, vector<Solution> &population, int father, int mother) {
+  Solution baby;
+
+  // Randomize which parent is going to be the middle parent
+  int middle_parent = rand() % 2;
+
+  if (middle_parent == 0) {
+    // Two random points based on the size of the father's route
+    int i = rand() % population[father].route.size();
+    int j = rand() % population[father].route.size();
+
+    // Define max and min idx
+    int max_idx = max(i, j);
+    int min_idx = min(i, j);
+
+    for (int m = min_idx; m <= max_idx; m++) {
+      baby.route.push_back(population[father].route[m]);
+      baby.cities_colected.push_back(population[father].cities_colected[m]);
+    } // Middle part of the route and collections from the father
+    for (int k = 0; k < population[mother].route.size(); k++) {
+      // Check if the gene is already in the baby from father
+      bool gene_is_repeated = false;
+      for (int l = 0; l < baby.route.size(); l++) {
+        if (population[mother].route[k] == baby.route[l]) {
+          gene_is_repeated = true;
+          break;
+        }
+      }
+      if (!gene_is_repeated) {
+        baby.route.push_back(population[mother].route[k]);
+        baby.cities_colected.push_back(population[mother].cities_colected[k]);
+      }
+    } // Remaining part of the route and collections from the mother
+  } else {
+    // Two random points based on the size of the father's route
+    int a = rand() % population[mother].route.size();
+    int b = rand() % population[mother].route.size();
+
+    // Define max and min idx
+    int max_idx = max(a, b);
+    int min_idx = min(a, b);
+
+    for (int s = min_idx; s <= max_idx; s++) {
+      baby.route.push_back(population[mother].route[s]);
+      baby.cities_colected.push_back(population[mother].cities_colected[s]);
+    } // Middle part of the route and collections from the father
+    for (int q = 0; q < population[father].route.size(); q++) {
+      // Check if the gene is already in the baby from father
+      bool gene_is_repeated = false;
+      for (int r = 0; r < baby.route.size(); r++) {
+        if (population[father].route[q] == baby.route[r]) {
+          gene_is_repeated = true;
+          break;
+        }
+      }
+      if (!gene_is_repeated) {
+        baby.route.push_back(population[father].route[q]);
+        baby.cities_colected.push_back(population[father].cities_colected[q]);
+      }
+    } // Remaining part of the route and collections from the mother
+  }  
+
+  return baby;
+}
+
+Solution two_fold_crossover(Instance& instance, vector<Solution> &population) {
+  int father = rand() % population.size(), mother = rand() % population.size();
+  Solution baby = two_fold_crossover(instance, population, father, mother);
+  return baby;
+}
+
+Solution passenger_crossover(Instance& instance, vector<Solution> &population, int father, int mother) {
+  // Add a max number of attempts
+  // There's no guarantee each pair of parent is able to produce valid offspring
+  int attempts = 5;
+
+  for (int attempt = 0; attempt < attempts; ++attempt) {
+    // Choose which parent's route/bonus to keep as base
+    // The base is the parent whose route and bonus the baby will inherit
+    int base = (rand() % 2 == 0) ? father : mother;
+    int other = (base == father) ? mother : father;
+
+    Solution baby = population[base];
+
+    // Ensure passenger vector has correct size and is cleared
+    baby.passengers_riding.assign(instance.number_of_passengers, false);
+
+    // Helper function to check if a given passanger is riding in a parent's car
+    // Captures local scope by reference
+    // Try to avoid out-of-range-access
+    auto parent_flag = [&](const Solution &s, int p) {
+      return p >= 0 && p < (int)s.passengers_riding.size() && s.passengers_riding[p];
+    };
+
+    // Passenger loading logic
+    // 1) Keep passengers both parents had
+    // If both parents had it, then it must be safe and/or valuable
+    for (int p = 0; p < instance.number_of_passengers; ++p) {
+      if (parent_flag(population[father], p) && parent_flag(population[mother], p)) {
+        baby.passengers_riding[p] = true;
+      }
+    }
+
+    // 2) Collect exclusive candidates (present in exactly one parent)
+    vector<int> candidates;
+    for (int p = 0; p < instance.number_of_passengers; ++p) {
+      bool f = parent_flag(population[father], p);
+      bool m = parent_flag(population[mother], p);
+      if ((f || m) && !(f && m)) candidates.push_back(p);
+    }
+
+    // 3) Sort candidates by desirability (richest first), like able_passengers ordering
+    sort(candidates.begin(), candidates.end(), [&](int a, int b) {
+      if (instance.passengers[a].max_cost != instance.passengers[b].max_cost)
+        return instance.passengers[a].max_cost > instance.passengers[b].max_cost;
+      return instance.passengers[a].max_time > instance.passengers[b].max_time;
+    });
+
+    // 4) Greedy add candidates only if they keep the solution feasible
+    for (int p : candidates) {
+      baby.passengers_riding[p] = true;
+      if (!check_passengers_riding(instance, baby)) {
+        baby.passengers_riding[p] = false; // Revert if infeasible
+      }
+    }
+
+    // Attempt to repair the baby using heuristic should the baby be invalid
+    Solution repaired = baby;
+    able_passengers(instance, repaired);
+
+    // If either baby or repaired is valid, return it
+    if (check_passengers_riding(instance, baby)) return baby;
+    if (check_passengers_riding(instance, repaired)) return repaired;
+
+    // Otherwise, try again
+  }
+
+  // Fallback: return father if no valid offspring is produced after all attempts
+  // Maybe don't return anything and just skip the pair of parents entirely?
+  // return population[father];
+}
+
 vector<Solution> crossover(Instance& instance, Population &parents) {
   vector<Solution> children;
   while (children.size() < parents.population.size()) {
     Solution baby = one_crossover(instance, parents.population);
+    //Solution baby = two_fold_crossover(instance, parents.population);
     update_objectives(instance, baby);
     children.push_back(baby);
   }
   return children;
 }
 // returns a population of children equal to the size of the population of parents
+
+// ======================
 
 void save_data_routine(Generations& generations, BoundedParetoSet *EP, std::chrono::high_resolution_clock::time_point &inicio, int &biggest_multiple, int valuations, duration<double>& tempoTotal){
     auto fim = high_resolution_clock::now();
@@ -1464,7 +1612,7 @@ int main() {
     
     //Test NSGA2
     for(int current_test =0; current_test<qt_tests;current_test++){
-      cout<<"current test SPEA2: "<<current_test<<" in instance "<<instances_addresses[instance_index]<<endl;
+      cout<<"current test NSGA-II: "<<current_test<<" in instance "<<instances_addresses[instance_index]<<endl;
       BoundedParetoSet *EP = new BoundedParetoSet();
       Population population;
       Generations saved_generations;
@@ -1476,11 +1624,12 @@ int main() {
       int max_valuations_after_alg = max_valuations- valuations_before_alg;
       duration<double> tempoTotal = duration<double>::zero();
       population = NSGA2(saved_generations, EP, tempoTotal, instance, initial_population, max_population, max_valuations_after_alg, mutation_chance, crossover_chance, valuations_before_alg);
-      create_test_archives(instance, "SPEA2", folder_name, instances_addresses, instance_index,  current_test,  saved_generations, seed, tempoTotal);
+      create_test_archives(instance, "NSGA-II", folder_name, instances_addresses, instance_index,  current_test,  saved_generations, seed, tempoTotal);
       delete EP;
     }
-    cout<<"SPEA2 Results available!"<<endl;
+    cout<<"NSGA-II Results available!"<<endl;
 
+  }
 }
 
 #endif

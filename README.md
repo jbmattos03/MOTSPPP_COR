@@ -18,18 +18,4 @@ Ridesharing systems have emerged as effective mechanisms to enhance urban mobili
 ├── /results/            # Raw experimental and processed results
 ```
 
-## 👥 Authors  
-| Name | Affiliation | Contact |  
-|------|-------------|---------|  
-| **Juvenal B. A. Silva** | Federal University of Bahia, Institute of Computing | [juvenal.bruno@ufba.br](mailto:juvenal.bruno@ufba.br) |  
-| **Tarcisio A. P. Brito** | Federal University of Bahia, Institute of Computing | [tarcisio.brito@ufba.br](mailto:tarcisio.brito@ufba.br) |  
-| **Ricardo A. Rios** | Federal University of Bahia, Institute of Computing | [ricardoar@ufba.br](mailto:ricardoar@ufba.br) |  
-| **Tatiane N. Rios** | Federal University of Bahia, Institute of Computing | [tatiane.nogueira@ufba.br](mailto:tatiane.nogueira@ufba.br) |  
-| **Bilel Derbel** | University of Lille, CNRS, Centrale, Inria, UMR 9189 - CRIStAL, F-59000 Lille, France | [bilel.derbel@univ-lille.fr](mailto:bilel.derbel@univ-lille.fr) |  
-| **Islame F. C. Fernandes** | Federal University of Bahia, Institute of Computing | [islame.felipe@ufba.br](mailto:islame.felipe@ufba.br) |  
-
-
-## 📧 Contact  
-For questions, contact the lead author: [juvenal.bruno@ufba.br](mailto:juvenal.bruno@ufba.br).  
-
 ---
